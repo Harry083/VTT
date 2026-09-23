@@ -1,0 +1,7 @@
+fastapi==0.115.0          # web UI backend
+uvicorn[standard]==0.30.6
+opencv-python
+numpy
+pytesseract               # OCR - also needs the Tesseract binary itself (see README):
+                          #   Windows: https://github.com/UB-Mannheim/tesseract/wiki
+                          #   Debian/Ubuntu: apt install tesseract-ocr

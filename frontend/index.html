@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VTT</title>
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="app">
+  <header class="app-header">
+    <h1>VTT</h1>
+    <p class="subtitle">Reads burned-in CCTV timestamps with OCR and lays each clip out on a timeline</p>
+  </header>
+
+  <main>
+    <section class="picker-row">
+      <div class="picker-card">
+        <h2><span class="step">1</span> Folder <span class="hint">(CCTV exports)</span></h2>
+        <div class="path-input-row">
+          <input type="text" id="folder-input" class="path-input" placeholder="C:\path\to\exports" />
+          <button id="folder-browse-btn" class="browse-btn">Browse…</button>
+        </div>
+        <div class="file-status" id="folder-status"></div>
+      </div>
+
+      <div class="picker-card">
+        <h2><span class="step">2</span> Timestamp region <span class="hint">(drawn once, used for every file)</span></h2>
+        <div class="region-row">
+          <div id="region-thumb" class="region-thumb empty">No region yet</div>
+          <button id="region-btn" class="browse-btn" disabled>Select Region…</button>
+        </div>
+        <div class="file-status" id="region-status"></div>
+      </div>
+    </section>
+
+    <section class="controls-row">
+      <label class="model-select-label">
+        Date order
+        <select id="date-order-select">
+          <option value="DMY">DD-MM-YYYY</option>
+          <option value="MDY">MM-DD-YYYY</option>
+          <option value="YMD">YYYY-MM-DD</option>
+        </select>
+      </label>
+      <label class="model-select-label">
+        Time format
+        <select id="hour-format-select">
+          <option value="24">24-hour</option>
+          <option value="12">12-hour (AM/PM)</option>
+        </select>
+      </label>
+      <a id="export-btn" class="report-btn report-btn-secondary disabled" aria-disabled="true">Export CSV</a>
+      <button id="run-btn" class="run-btn" disabled>Process Files</button>
+      <button id="cancel-btn" class="cancel-btn hidden">Cancel</button>
+    </section>
+
+    <section id="progress-section" class="progress-section hidden">
+      <div class="progress-bar-track">
+        <div id="progress-bar-fill" class="progress-bar-fill"></div>
+      </div>
+      <div class="progress-label" id="progress-label">Starting…</div>
+    </section>
+
+    <section id="error-section" class="error-section hidden"></section>
+
+    <section class="results-section">
+      <div class="results-header">
+        <h2>Timeline</h2>
+        <div class="legend">
+          <span><i class="swatch ok"></i>OK</span>
+          <span><i class="swatch estimated"></i>Estimated</span>
+          <span><i class="swatch review"></i>Needs review</span>
+          <span><i class="swatch manual"></i>Manual</span>
+        </div>
+      </div>
+      <div class="score-cards" id="summary-cards"></div>
+      <div id="timeline" class="timeline">
+        <p class="placeholder">Load a folder, draw the timestamp region and process the files to build the timeline.</p>
+      </div>
+      <p class="hint-line">Click a bar to open that clip in your default video player.</p>
+    </section>
+
+    <section class="metadata-section">
+      <div class="results-header">
+        <h2>Files</h2>
+        <div class="filter-tabs" id="filter-tabs">
+          <button data-filter="all" class="active">All</button>
+          <button data-filter="review">Needs review</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="file-table">
+          <thead>
+            <tr><th>File</th><th>Start</th><th>End</th><th>Duration</th><th>Confidence</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody id="file-rows">
+            <tr><td colspan="7" class="placeholder">No folder loaded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">MIT licensed · runs locally, nothing leaves this machine</footer>
+</div>
+
+<!-- Folder browser -->
+<div id="browse-modal" class="modal hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <span>Select a folder</span>
+      <button class="modal-close" data-close>&times;</button>
+    </div>
+    <div class="modal-toolbar">
+      <button id="browse-up-btn" title="Up one level">&uarr; Up</button>
+      <span id="browse-current-path" class="current-path"></span>
+    </div>
+    <div id="browse-entries" class="browse-entries"></div>
+    <div class="modal-footer">
+      <span id="browse-count" class="hint"></span>
+      <button id="browse-select-btn" class="run-btn small">Use This Folder</button>
+    </div>
+  </div>
+</div>
+
+<!-- Region picker -->
+<div id="region-modal" class="modal hidden">
+  <div class="modal-content wide">
+    <div class="modal-header">
+      <span>Drag a box around the on-screen timestamp</span>
+      <button class="modal-close" data-close>&times;</button>
+    </div>
+    <div class="modal-toolbar">
+      <label class="inline-label">Preview
+        <select id="preview-file-select"></select>
+      </label>
+      <span class="hint">Include the whole date and time, with a little margin.</span>
+    </div>
+    <div class="region-stage-wrap">
+      <div id="region-stage" class="region-stage">
+        <img id="region-image" alt="First frame of the selected file" draggable="false" />
+        <div id="region-box" class="region-box hidden"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div id="test-result" class="test-result"></div>
+      <button id="test-ocr-btn" class="browse-btn" disabled>Test OCR</button>
+      <button id="region-confirm-btn" class="run-btn small" disabled>Use Region</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manual correction -->
+<div id="edit-modal" class="modal hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <span id="edit-title">Correct timestamps</span>
+      <button class="modal-close" data-close>&times;</button>
+    </div>
+    <div class="edit-info">
+      <div id="edit-note" class="edit-note"></div>
+      <div class="hint">Enter times as <code id="edit-format">DD-MM-YYYY HH:MM:SS</code> — the format set above.</div>
+    </div>
+    <div class="edit-body">
+      <div class="edit-col">
+        <h3>Start · first frame</h3>
+        <div class="crop-frame"><img id="edit-start-img" alt="Timestamp region, first frame" /></div>
+        <div class="raw-line">OCR read: <code id="edit-start-raw">-</code></div>
+        <input type="text" id="edit-start" class="path-input" placeholder="" />
+      </div>
+      <div class="edit-col">
+        <h3>End · last frame</h3>
+        <div class="crop-frame"><img id="edit-end-img" alt="Timestamp region, last frame" /></div>
+        <div class="raw-line">OCR read: <code id="edit-end-raw">-</code></div>
+        <input type="text" id="edit-end" class="path-input" placeholder="" />
+      </div>
+    </div>
+    <div class="edit-actions" id="edit-actions">
+      <span class="hint">Clip length <strong id="edit-duration"></strong> — fill in one end from the other (±1 s, as the on-screen clock only shows whole seconds):</span>
+      <button class="browse-btn" id="edit-derive-end">End = start + length</button>
+      <button class="browse-btn" id="edit-derive-start">Start = end − length</button>
+    </div>
+    <div class="modal-footer">
+      <span id="edit-error" class="file-status err"></span>
+      <button id="edit-open-btn" class="browse-btn">Open Clip</button>
+      <button id="edit-save-btn" class="run-btn small">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip" class="tooltip hidden"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
