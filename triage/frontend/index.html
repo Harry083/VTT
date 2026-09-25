@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Triage</title>
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<div class="app">
+  <header class="app-header">
+    <h1>Triage</h1>
+    <p class="subtitle">Finds motion, people, vehicles and weapons in CCTV footage, so you know which parts to watch</p>
+  </header>
+
+  <main>
+    <section class="picker-row">
+      <div class="picker-card">
+        <h2><span class="step">1</span> Folder <span class="hint">(CCTV exports)</span></h2>
+        <div class="path-input-row">
+          <input type="text" id="folder-input" class="path-input" placeholder="C:\path\to\exports" />
+          <button id="folder-browse-btn" class="browse-btn">Browse…</button>
+        </div>
+        <div class="file-status" id="folder-status"></div>
+      </div>
+
+      <div class="picker-card">
+        <h2><span class="step">2</span> Zones <span class="hint">(optional, used for every file)</span></h2>
+        <div class="region-row">
+          <div id="zone-thumb" class="zone-thumb empty">Whole frame</div>
+          <button id="zone-btn" class="browse-btn" disabled>Draw Zones…</button>
+        </div>
+        <div class="file-status" id="zone-status">Activity anywhere in the frame counts.</div>
+      </div>
+    </section>
+
+    <section class="picker-row">
+      <div class="picker-card">
+        <h2><span class="step">3</span> Motion</h2>
+        <div class="settings-grid">
+          <label class="model-select-label">
+            Sensitivity
+            <select id="sensitivity-select">
+              <option value="low">Low (large movement only)</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High (small / distant)</option>
+            </select>
+          </label>
+          <label class="model-select-label">
+            Frames checked
+            <select id="sample-select">
+              <option value="2">2 per second (fastest)</option>
+              <option value="5" selected>5 per second</option>
+              <option value="10">10 per second</option>
+            </select>
+          </label>
+        </div>
+        <div class="file-status">Big lighting changes (IR switching, lights on) are reported separately, not as motion.</div>
+      </div>
+
+      <div class="picker-card" id="objects-card">
+        <h2><span class="step">4</span> Objects
+          <label class="check-label h2-toggle"><input type="checkbox" id="detect-toggle" checked /> Detect objects</label>
+        </h2>
+        <div class="settings-grid">
+          <label class="model-select-label">
+            Model
+            <select id="model-select">
+              <option value="n" selected>Fast (YOLO11n)</option>
+              <option value="s">Balanced (YOLO11s)</option>
+              <option value="m">Accurate (YOLO11m)</option>
+            </select>
+          </label>
+          <label class="model-select-label">
+            Min. confidence
+            <select id="confidence-select">
+              <option value="0.25">25% (more, noisier)</option>
+              <option value="0.4" selected>40%</option>
+              <option value="0.6">60% (fewer, surer)</option>
+            </select>
+          </label>
+          <label class="model-select-label">
+            Check every
+            <select id="detect-every-select">
+              <option value="0.5">0.5 s</option>
+              <option value="1" selected>1 s</option>
+              <option value="2">2 s</option>
+            </select>
+          </label>
+          <label class="check-label" title="Skip still stretches of footage - much faster, but won't report objects that never move">
+            <input type="checkbox" id="gated-toggle" checked /> Only around motion
+          </label>
+        </div>
+        <div class="category-chips" id="category-chips">
+          <label class="chip"><input type="checkbox" value="person" checked /><i class="swatch person"></i>Person</label>
+          <label class="chip"><input type="checkbox" value="vehicle" checked /><i class="swatch vehicle"></i>Vehicle</label>
+          <label class="chip"><input type="checkbox" value="weapon" checked /><i class="swatch weapon"></i>Weapon</label>
+          <label class="chip"><input type="checkbox" value="bag" checked /><i class="swatch bag"></i>Bag</label>
+          <label class="chip"><input type="checkbox" value="animal" /><i class="swatch animal"></i>Animal</label>
+        </div>
+        <div class="extra-model-row">
+          <input type="text" id="extra-model-input" class="path-input" placeholder="Extra model, e.g. C:\models\firearms.pt (optional)" />
+        </div>
+        <div class="file-status" id="detector-status"></div>
+      </div>
+    </section>
+
+    <section class="controls-row">
+      <span class="controls-summary" id="controls-summary">Load a folder to begin.</span>
+      <a id="export-btn" class="report-btn report-btn-secondary disabled" aria-disabled="true">Export CSV</a>
+      <button id="run-btn" class="run-btn" disabled>Analyse Files</button>
+      <button id="cancel-btn" class="cancel-btn hidden">Cancel</button>
+    </section>
+
+    <section id="progress-section" class="progress-section hidden">
+      <div class="progress-bar-track">
+        <div id="progress-bar-fill" class="progress-bar-fill"></div>
+      </div>
+      <div class="progress-label" id="progress-label">Starting…</div>
+    </section>
+
+    <section id="warning-section" class="warning-section hidden"></section>
+    <section id="error-section" class="error-section hidden"></section>
+
+    <section class="results-section">
+      <div class="results-header">
+        <h2>Activity</h2>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="score-cards" id="summary-cards"></div>
+      <div id="timeline" class="timeline">
+        <p class="placeholder">Load a folder and analyse the files to see where the activity is.</p>
+      </div>
+      <p class="hint-line">Time runs from the start of each clip. Click a bar to see that event, or a file name for its motion heatmap.</p>
+    </section>
+
+    <section class="metadata-section">
+      <div class="results-header">
+        <h2>Events</h2>
+        <div class="filter-tabs" id="filter-tabs"></div>
+      </div>
+      <div class="table-wrap">
+        <table class="file-table">
+          <thead>
+            <tr><th></th><th>File</th><th>Time in clip</th><th>Length</th><th>Type</th><th>Details</th><th>Score</th></tr>
+          </thead>
+          <tbody id="event-rows">
+            <tr><td colspan="7" class="placeholder">No folder loaded.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">MIT licensed · runs locally, nothing leaves this machine</footer>
+</div>
+
+<!-- Folder browser -->
+<div id="browse-modal" class="modal hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <span>Select a folder</span>
+      <button class="modal-close" data-close>&times;</button>
+    </div>
+    <div class="modal-toolbar">
+      <button id="browse-up-btn" title="Up one level">&uarr; Up</button>
+      <span id="browse-current-path" class="current-path"></span>
+    </div>
+    <div id="browse-entries" class="browse-entries"></div>
+    <div class="modal-footer">
+      <span id="browse-count" class="hint"></span>
+      <button id="browse-select-btn" class="run-btn small">Use This Folder</button>
+    </div>
+  </div>
+</div>
+
+<!-- Zone picker -->
+<div id="zone-modal" class="modal hidden">
+  <div class="modal-content wide">
+    <div class="modal-header">
+      <span>Drag boxes over the areas to watch or ignore</span>
+      <button class="modal-close" data-close>&times;</button>
+    </div>
+    <div class="modal-toolbar">
+      <div class="mode-toggle" id="zone-mode">
+        <button data-mode="watch" class="active" title="Only motion and objects inside watch zones are reported">Watch</button>
+        <button data-mode="ignore" title="Nothing here is reported - the on-screen clock, trees, a flag, a busy road">Ignore</button>
+      </div>
+      <label class="inline-label">Preview
+        <select id="preview-file-select"></select>
+      </label>
+      <button id="zone-clear-btn">Clear all</button>
+      <span class="hint" id="zone-hint"></span>
+    </div>
+    <div class="region-stage-wrap">
+      <div id="zone-stage" class="region-stage">
+        <img id="zone-image" alt="First frame of the selected file" draggable="false" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <span class="hint" id="zone-summary"></span>
+      <button id="zone-confirm-btn" class="run-btn small">Use Zones</button>
+    </div>
+  </div>
+</div>
+
+<!-- Event viewer -->
+<div id="event-modal" class="modal hidden">
+  <div class="modal-content wide">
+    <div class="modal-header">
+      <span id="event-title"></span>
+      <button class="modal-close" data-close>&times;</button>
+    </div>
+    <div class="event-details" id="event-details"></div>
+    <div class="event-view"><img id="event-image" alt="Snapshot of the event" /></div>
+    <div class="modal-footer">
+      <span class="hint" id="event-position"></span>
+      <button id="event-prev-btn" class="browse-btn">&larr; Previous</button>
+      <button id="event-next-btn" class="browse-btn">Next &rarr;</button>
+      <button id="event-heatmap-btn" class="browse-btn">Heatmap</button>
+      <button id="event-open-btn" class="run-btn small">Open Clip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Motion heatmap -->
+<div id="heatmap-modal" class="modal hidden">
+  <div class="modal-content wide">
+    <div class="modal-header">
+      <span id="heatmap-title"></span>
+      <button class="modal-close" data-close>&times;</button>
+    </div>
+    <div class="event-view"><img id="heatmap-image" alt="Motion heatmap over the first frame" /></div>
+    <div class="modal-footer">
+      <span class="hint">Where things moved over the whole clip - red is busiest.</span>
+      <button id="heatmap-open-btn" class="run-btn small">Open Clip</button>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip" class="tooltip hidden"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

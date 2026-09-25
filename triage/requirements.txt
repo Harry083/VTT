@@ -1,0 +1,6 @@
+fastapi==0.115.0          # web UI backend
+uvicorn[standard]==0.30.6
+opencv-python
+numpy
+ultralytics               # YOLO object detection - pulls in PyTorch. For an NVIDIA GPU,
+                          # install the CUDA build of torch first: https://pytorch.org/get-started
